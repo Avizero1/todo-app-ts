@@ -1,0 +1,28 @@
+# .gitignore — что НЕ попадает в репозиторий: зависимости, сборки, секреты, локальный мусор.
+
+# Node / фронтенд
+node_modules/
+dist/
+coverage/
+.vite/
+
+# Kotlin / Gradle
+build/
+.gradle/
+out/
+.kotlin/
+*.jar
+!gradle-wrapper.jar
+
+# секреты: шаблоны *.example коммитим, реальные .env — нет
+.env
+.env.*
+!.env.example
+
+# логи и мусор системы и редакторов
+*.log
+*.iml
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
