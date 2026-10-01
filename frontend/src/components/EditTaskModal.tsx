@@ -41,7 +41,8 @@ export default function EditTaskModal({ task, onSave, onClose }: Props) {
       ref={dialogRef}
       className="modal-dialog"
       onClose={onClose}
-      onClick={(e) => e.target === dialogRef.current && onClose()}
+      onCancel={(e) => busy && e.preventDefault()}
+      onMouseDown={(e) => e.target === dialogRef.current && onClose()}
     >
       <form className="modal" onSubmit={handleSubmit}>
         <h2>Редактирование задачи</h2>
@@ -59,7 +60,7 @@ export default function EditTaskModal({ task, onSave, onClose }: Props) {
         />
         {error && <p className="error">{error}</p>}
         <div className="modal__actions">
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} disabled={busy}>
             Отмена
           </button>
           <button type="submit" className="primary" disabled={busy}>

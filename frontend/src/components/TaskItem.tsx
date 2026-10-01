@@ -13,12 +13,15 @@ function formatDate(value: string) {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   })
 }
 
 export default function TaskItem({ task, onToggle, onEdit, onDelete }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const created = formatDate(task.created_at)
+  const updated = formatDate(task.updated_at)
 
   return (
     <li className={task.completed ? 'task task--done' : 'task'}>
@@ -33,8 +36,8 @@ export default function TaskItem({ task, onToggle, onEdit, onDelete }: Props) {
         <h3 className="task__title">{task.title}</h3>
         {task.description && <p className="task__desc">{task.description}</p>}
         <p className="task__meta">
-          {formatDate(task.created_at)}
-          {task.updated_at !== task.created_at && ` (изм. ${formatDate(task.updated_at)})`}
+          Создана {created}
+          {updated !== created && ` · изменена ${updated}`}
         </p>
       </div>
       <div className="task__actions">
@@ -46,7 +49,8 @@ export default function TaskItem({ task, onToggle, onEdit, onDelete }: Props) {
             type="button"
             className="danger"
             onClick={() => onDelete(task)}
-            onMouseLeave={() => setConfirmDelete(false)}
+            onBlur={() => setConfirmDelete(false)}
+            autoFocus
           >
             Точно?
           </button>
