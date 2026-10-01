@@ -1,0 +1,91 @@
+﻿=========================================================
+УЧАСТНИК 2 - БЭКЕНД НА KOTLIN
+=========================================================
+Проект: todo-приложение (фронт на TypeScript + бэк на Kotlin + база PostgreSQL).
+Твоя часть: папка backend/ - сборка, подключение к базе, таблицы, модуль задач.
+
+Ссылка на репозиторий: https://github.com/dodry-question/todo-app-ts
+
+---------------------------------------------------------
+1. ЧТО СКАЧАТЬ
+---------------------------------------------------------
+1) Git ............................ https://git-scm.com/download/win
+2) JDK 21 (Temurin, .msi) ......... https://adoptium.net
+3) IntelliJ IDEA Community ........ https://www.jetbrains.com/idea/download
+   Community - бесплатная версия, этого достаточно.
+   Если JDK не ставил вручную, IntelliJ предложит скачать его сам при первом запуске.
+4) По желанию: Docker Desktop, если захочешь поднять базу PostgreSQL только у себя,
+   чтобы проверять бэк, не дожидаясь участника 5.
+
+---------------------------------------------------------
+2. ПРОВЕРИТЬ, ЧТО ВСЁ ВСТАЛО
+---------------------------------------------------------
+   git --version
+   java -version        (должно быть 21)
+
+---------------------------------------------------------
+3. ЗАБРАТЬ ПРОЕКТ И СОЗДАТЬ СВОЮ ВЕТКУ
+---------------------------------------------------------
+   git clone https://github.com/dodry-question/todo-app-ts
+   cd todo-app-ts
+   git checkout -b backend-kotlin
+
+---------------------------------------------------------
+4. ОТКРЫТЬ БЭК В INTELLIJ
+---------------------------------------------------------
+IntelliJ -> Open -> выбрать папку backend (внутри todo-app-ts).
+Первый запуск будет долгим: Gradle сам скачает всё, что прописано в build.gradle.kts.
+
+Что Gradle должен скачать за тебя (это ты сам вписываешь в build.gradle.kts,
+версии бери свежие):
+   - движок Ktor: ktor-server-netty
+   - JSON: ktor-server-content-negotiation, ktor-serialization-jackson
+   - авторизация по токену: ktor-server-auth, ktor-server-auth-jwt
+   - CORS и ошибки: ktor-server-cors, ktor-server-status-pages
+   - логи: ktor-server-call-logging, logback-classic
+   - база: exposed-core, exposed-jdbc, exposed-java-time, postgresql, HikariCP
+   - хеш пароля: at.favre.lib:bcrypt (или org.mindrot:jbcrypt)
+   - плагин Gradle application для запуска приложения
+
+---------------------------------------------------------
+5. ЗАПУСТИТЬ БЭК
+---------------------------------------------------------
+В IntelliJ: открой backend/src/main/kotlin/com/todo/Application.kt и нажми Run.
+В терминале из папки backend: gradle run (если Gradle стоит отдельно).
+
+Если нужна база только у себя, подними её в Docker:
+   docker run --name todo-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=todo -p 5432:5432 -d postgres:16
+
+---------------------------------------------------------
+6. ТВОИ ФАЙЛЫ (только их и правишь)
+---------------------------------------------------------
+   backend/build.gradle.kts, backend/settings.gradle.kts
+   backend/src/main/resources/application.conf, logback.xml
+   backend/src/main/kotlin/com/todo/Application.kt
+   backend/src/main/kotlin/com/todo/plugins/Plugins.kt
+   backend/src/main/kotlin/com/todo/database/DatabaseFactory.kt
+   backend/src/main/kotlin/com/todo/database/Tables.kt
+   backend/src/main/kotlin/com/todo/model/Task.kt
+   backend/src/main/kotlin/com/todo/repository/TaskRepository.kt
+   backend/src/main/kotlin/com/todo/service/TaskService.kt
+   backend/src/main/kotlin/com/todo/routes/TaskRoutes.kt
+
+Авторизацию (User.kt, JwtConfig.kt, AuthService.kt, AuthRoutes.kt, UserRepository.kt) делает Миша.
+Полный список задач с галочками: файл docs/plan.md, раздел "Участник 2".
+
+---------------------------------------------------------
+7. ОТПРАВИТЬ РАБОТУ
+---------------------------------------------------------
+   git pull
+   git add .
+   git commit -m "бэкенд: база, таблицы, задачи"
+   git push -u origin backend-kotlin
+
+Потом на GitHub нажать "Compare & pull request" и влить ветку в main.
+
+---------------------------------------------------------
+8. ВАЖНО
+---------------------------------------------------------
+- Пароли, ключи и файл .env в репозиторий не заливаем (они уже в .gitignore).
+- Папки frontend/, docs/, файл docker-compose.yml - чужая зона, не трогаем.
+- Не получилось что-то - напиши в общий чат, не сиди молча.
