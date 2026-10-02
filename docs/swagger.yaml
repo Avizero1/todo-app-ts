@@ -1,6 +1,6 @@
 # docs/swagger.yaml — Swagger-спецификация (OpenAPI 3.0.3) API бэкенда.
 # Источники правды: docs/api.md (договор фронт-бэк), код backend/src/main/kotlin/com/todo
-# (routes/AuthRoutes.kt, service/AuthService.kt, model/User.kt), ТЗ бэкенда (docs/Миша — фуллстек.txt).
+# (routes/AuthRoutes.kt, service/AuthService.kt, model/User.kt).
 # Правило: формат меняется сначала в docs/api.md, затем здесь — иначе файл разойдётся с кодом.
 # Открыть: Swagger UI (например, editor.swagger.io -> Import) или Redoc.
 openapi: 3.0.3
@@ -25,7 +25,7 @@ info:
     без слова `Bearer` — Swagger добавит его сам.
 
     Реализация: `auth` — участник 3 (`routes/AuthRoutes.kt`), `tasks` — участник 2
-    (`routes/TaskRoutes.kt`). Примеры curl — в `docs/api.md` и `docs/handoff-misha.md`.
+    (`routes/TaskRoutes.kt`). Примеры curl — в `docs/api.md`.
   contact:
     name: Договор API (docs/api.md)
     url: https://github.com/dodry-question/todo-app-ts
@@ -62,13 +62,13 @@ paths:
               withName:
                 summary: С именем
                 value:
-                  email: misha@example.com
+                  email: user@example.com
                   password: secret123
-                  name: Миша
+                  name: user
               withoutName:
                 summary: Без имени (поле можно не присылать)
                 value:
-                  email: misha@example.com
+                  email: user@example.com
                   password: secret123
       responses:
         '201':
@@ -81,8 +81,8 @@ paths:
                 token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature
                 user:
                   id: 1
-                  name: Миша
-                  email: misha@example.com
+                  name: user
+                  email: user@example.com
         '400':
           description: |
             Неверные данные или битый JSON. Тексты сообщений:
@@ -135,7 +135,7 @@ paths:
             schema:
               $ref: '#/components/schemas/LoginRequest'
             example:
-              email: misha@example.com
+              email: user@example.com
               password: secret123
       responses:
         '200':
@@ -148,8 +148,8 @@ paths:
                 token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature
                 user:
                   id: 1
-                  name: Миша
-                  email: misha@example.com
+                  name: user
+                  email: user@example.com
         '400':
           description: |
             Неверные данные или битый JSON. Тексты сообщений:
@@ -461,7 +461,7 @@ components:
           format: email
           maxLength: 255
           description: Обязателен; приводится к нижнему регистру и обрезается.
-          example: misha@example.com
+          example: user@example.com
         password:
           type: string
           format: password
@@ -474,7 +474,7 @@ components:
           nullable: true
           maxLength: 255
           description: Необязателен; пусто или пробелы -> null в БД, в ответе будет "".
-          example: Миша
+          example: user
 
     LoginRequest:
       type: object
@@ -486,7 +486,7 @@ components:
         email:
           type: string
           description: Обязателен; нормализуется как при регистрации.
-          example: misha@example.com
+          example: user@example.com
         password:
           type: string
           format: password
@@ -510,10 +510,10 @@ components:
         name:
           type: string
           description: Всегда строка; если имя не задавали — "".
-          example: Миша
+          example: user
         email:
           type: string
-          example: misha@example.com
+          example: user@example.com
     AuthResponse:
       type: object
       description: Успешный ответ POST /api/auth/register и POST /api/auth/login.
