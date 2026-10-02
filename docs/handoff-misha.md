@@ -269,3 +269,53 @@ export async function logout() {
   `created_at`/`updated_at` — строка ISO-8601 UTC, `user_id` приходит с сервера, в теле запроса его **не передавай**.
 - Ожидаемые коды задач: `403` — чужая задача, `404` — нет такой, `400` — пустой `title`, `200`/`201` — успех.
 
+## Что добавлено в общий бэк (ветка `auth-misha`)
+
+По `roles-now.md` моя часть — дописать `build.gradle.kts` и `DatabaseFactory.kt`. Сделано, чужие файлы не тронуты.
+
+| Файл | Что теперь внутри |
+|---|---|
+| `backend/build.gradle.kts` | Плагины `kotlin("jvm")`, `kotlin("plugin.serialization")`, `io.ktor.plugin`, `application`; главный класс `com.todo.ApplicationKt`; задача `buildFatJar` -> `build/libs/todo-backend-all.jar`; зависимости Ktor 2.3.12, Exposed 0.50.1, HikariCP 5.1.0, драйвер PostgreSQL 42.7.4, **`ktor-server-auth-jwt`**, **`jbcrypt:0.4`**, logback 1.4.14 |
+| `backend/src/main/kotlin/com/todo/database/DatabaseFactory.kt` | Пул HikariCP из переменных окружения + `Database.connect(...)` + **`SchemaUtils.create(Users, Tasks)`**, плюс `DatabaseFactory.init()` / `DatabaseFactory.close()` |
+
+Версии выбраны под уже написанный код авторизации: **Exposed 0.x** (импорты `org.jetbrains.exposed.sql.*` в `model/User.kt` и `repository/UserRepository.kt`) и **Ktor 2.3.x**. Если участник 2 захочет Exposed 1.0 — меняются импорты (таблица замен есть комментарием в `model/User.kt`), тогда файлы Миши правит Миша.
+
+### Переменные окружения базы данных (для участника 5 — `.env.example` и compose)
+
+`DatabaseFactory` читает настройки так (первое найденное побеждает):
+
+| Переменная | Обязательна | По умолчанию | Зачем |
+|---|---|---|---|
+| `DB_URL` (или `DATABASE_URL`) | нет | собирается из `DB_HOST`/`DB_PORT`/`DB_NAME` | готовый JDBC-адрес, `jdbc:postgresql://postgres:5432/todo` |
+| `DB_HOST` (или `POSTGRES_*`) | нет | `localhost` | хост базы; в compose имя сервиса `postgres` |
+| `DB_PORT` | нет | `5432` | порт базы |
+| `DB_NAME` (или `POSTGRES_DB`) | нет | `todo` | имя базы |
+| `DB_USER` (или `POSTGRES_USER`) | нет | `todo` | пользователь базы |
+| `DB_PASSWORD` (или `POSTGRES_PASSWORD`) | **да в Docker** | пусто | пароль базы (в код/репозиторий не попадает) |
+| `DB_MAX_POOL_SIZE` | нет | `10` | размер пула соединений |
+
+> Пароль по умолчанию пустой специально: секреты в репозиторий не попадают. В Docker участник 5 кладёт `DB_PASSWORD` в `.env`.
+
+### Что осталось у участника 2, чтобы это запустилось
+
+1. `backend/src/main/kotlin/com/todo/database/Tables.kt` — объявить `object Tasks : Table("tasks")`
+   (связь с пользователем: `val userId = integer("user_id").references(Users.id)`; `Users` импортировать из `com.todo.model`, повторно не объявлять).
+   **Пока этой таблицы нет, строка `SchemaUtils.create(Users, Tasks)` в `DatabaseFactory.kt` не скомпилируется** — и это ожидаемо, заготовка `Tables.kt` пустая.
+2. `Application.kt` — `fun main` с `DatabaseFactory.init()` и запуском `embeddedServer`.
+3. `Plugins.kt` — `ContentNegotiation` (JSON), `CORS`, проверка JWT (как в шапке `security/JwtConfig.kt`), `routing { authRoutes(); taskRoutes() }`.
+4. `settings.gradle.kts` — по желанию: имя проекта и репозитории. Плагины и зависимости уже работают и без правок (`io.ktor.plugin` берётся с Gradle Plugin Portal, остальное — из `mavenCentral()`).
+
+Сборка и запуск (нужен JDK 17+; `gradle-wrapper` в репозитории пока нет):
+
+```bash
+# из папки backend
+gradle build          # или gradle buildFatJar -> build/libs/todo-backend-all.jar
+JWT_SECRET=любая-длинная-строка gradle run
+```
+
+PowerShell:
+
+```powershell
+$env:JWT_SECRET="любая-длинная-строка"; $env:DB_PASSWORD="todo"; gradle run
+```
+

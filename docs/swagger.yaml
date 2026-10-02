@@ -1,0 +1,652 @@
+# docs/swagger.yaml — Swagger-спецификация (OpenAPI 3.0.3) API бэкенда.
+# Источники правды: docs/api.md (договор фронт-бэк), код backend/src/main/kotlin/com/todo
+# (routes/AuthRoutes.kt, service/AuthService.kt, model/User.kt), ТЗ бэкенда (docs/Миша — фуллстек.txt).
+# Правило: формат меняется сначала в docs/api.md, затем здесь — иначе файл разойдётся с кодом.
+# Открыть: Swagger UI (например, editor.swagger.io -> Import) или Redoc.
+openapi: 3.0.3
+info:
+  title: Todo App API
+  version: 1.0.0
+  description: |
+    REST API todo-приложения: авторизация на JWT и задачи пользователя.
+
+    **Как читать этот файл**
+
+    - Авторизация — `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`.
+      Успешные регистрация/вход возвращают `token` (JWT, HS256); дальше токен передаётся в заголовке
+      `Authorization: Bearer <token>`. Срок жизни — переменная `JWT_EXPIRES_MINUTES`
+      (по умолчанию 1440 минут = сутки).
+    - Задачи — `/api/tasks`: только для залогиненного пользователя, `user_id` берётся из токена
+      (в теле запроса не передаётся). Чужая задача — `403`, несуществующая — `404`.
+    - Единый формат ошибки: `{ "message": "текст на русском" }` — для всех 4xx/5xx.
+    - Даты задач — строки ISO-8601 в UTC (например `2026-01-01T12:05:00Z`).
+
+    **Как пользоваться в Swagger UI**: нажми Authorize и вставь токен из `register`/`login`
+    без слова `Bearer` — Swagger добавит его сам.
+
+    Реализация: `auth` — участник 3 (`routes/AuthRoutes.kt`), `tasks` — участник 2
+    (`routes/TaskRoutes.kt`). Примеры curl — в `docs/api.md` и `docs/handoff-misha.md`.
+  contact:
+    name: Договор API (docs/api.md)
+    url: https://github.com/dodry-question/todo-app-ts
+servers:
+  - url: http://localhost:8080
+    description: Локальный запуск и docker compose (фронт ходит на этот адрес)
+tags:
+  - name: auth
+    description: >
+      Регистрация, вход, выход. Код: backend/src/main/kotlin/com/todo/routes/AuthRoutes.kt
+      (участник 3). Токен на этих операциях не нужен — на входе его ещё нет.
+  - name: tasks
+    description: >
+      Задачи пользователя. Контракт утверждён в docs/api.md, реализует участник 2
+      (routes/TaskRoutes.kt). Все операции требуют заголовок Authorization: Bearer <token>.
+
+paths:
+  /api/auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация нового пользователя
+      description: >
+        Создаёт пользователя и возвращает токен. Email приводится к нижнему регистру и обрезается
+        (регистр не влияет на «занятость»), пароль сохраняется только как BCrypt-хеш.
+        `name` необязателен: пустое или пробелы -> null в БД, в ответе будет `name: ""`.
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              withName:
+                summary: С именем
+                value:
+                  email: misha@example.com
+                  password: secret123
+                  name: Миша
+              withoutName:
+                summary: Без имени (поле можно не присылать)
+                value:
+                  email: misha@example.com
+                  password: secret123
+      responses:
+        '201':
+          description: Пользователь создан — возвращаем токен и данные пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature
+                user:
+                  id: 1
+                  name: Миша
+                  email: misha@example.com
+        '400':
+          description: |
+            Неверные данные или битый JSON. Тексты сообщений:
+            `Email обязателен`, `Email слишком длинный (максимум 255 символов)`,
+            `Некорректный email`, `Пароль обязателен`,
+            `Пароль должен быть не короче 6 символов`,
+            `Пароль слишком длинный (максимум 72 символов)`,
+            `Имя слишком длинное (максимум 255 символов)`,
+            `Некорректный JSON или не хватает обязательных полей`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                badEmail:
+                  summary: Некорректный email
+                  value:
+                    message: Некорректный email
+                shortPassword:
+                  summary: Короткий пароль
+                  value:
+                    message: Пароль должен быть не короче 6 символов
+                badJson:
+                  summary: Битый JSON
+                  value:
+                    message: Некорректный JSON или не хватает обязательных полей
+        '409':
+          description: Email уже занят
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Пользователь с таким email уже зарегистрирован
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Вход
+      description: >
+        Проверяет email и пароль, возвращает токен. Email нормализуется так же, как при регистрации
+        (нижний регистр, обрезка пробелов). Для «нет такого email» и «не тот пароль» отдаётся один
+        и тот же текст — не подсказываем, какие email зарегистрированы.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: misha@example.com
+              password: secret123
+      responses:
+        '200':
+          description: Вход выполнен — возвращаем токен и данные пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature
+                user:
+                  id: 1
+                  name: Миша
+                  email: misha@example.com
+        '400':
+          description: |
+            Неверные данные или битый JSON. Тексты сообщений:
+            `Email обязателен`, `Пароль обязателен`,
+            `Некорректный JSON или не хватает обязательных полей`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Пароль обязателен
+        '401':
+          description: Неверный email или пароль (одинаковый текст для обоих случаев)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Неверный email или пароль
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Выход
+      description: >
+        Проверяет, что токен действителен и его владелец существует. JWT хранит состояние на
+        клиенте, поэтому после 200 фронт просто удаляет токен из хранилища; сам токен на сервере
+        не отзывается.
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Выход выполнен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Выход выполнен
+        '401':
+          description: |
+            Токена нет, он в неверном формате, просрочен, подписан чужим секретом,
+            или пользователя с таким токеном больше нет.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                noToken:
+                  summary: Нет заголовка Authorization
+                  value:
+                    message: Нужен действительный токен
+                userGone:
+                  summary: Токен валиден, но пользователя удалили из БД
+                  value:
+                    message: Пользователя с таким токеном больше нет
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/tasks:
+    get:
+      tags: [tasks]
+      summary: Список задач текущего пользователя
+      description: Возвращаются только задачи владельца токена — чужие в список не попадают.
+      operationId: listTasks
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Массив задач (может быть пустым)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+              example:
+                - id: 1
+                  title: Сделать модуль авторизации
+                  description: регистрация, вход, JWT
+                  completed: false
+                  created_at: "2026-01-01T12:05:00Z"
+                  updated_at: "2026-01-01T12:05:00Z"
+                  user_id: 1
+                - id: 2
+                  title: Проверить сценарии из задания
+                  description: ""
+                  completed: true
+                  created_at: "2026-01-01T12:10:00Z"
+                  updated_at: "2026-01-01T12:30:00Z"
+                  user_id: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    post:
+      tags: [tasks]
+      summary: Создать задачу
+      description: >
+        `title` обязателен и не может быть пустым; `description` необязателен (в ответе будет `""`).
+        `user_id` берётся из токена — в теле передавать его не нужно.
+      operationId: createTask
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+            examples:
+              withDescription:
+                summary: С описанием
+                value:
+                  title: Сделать модуль авторизации
+                  description: регистрация, вход, JWT
+              titleOnly:
+                summary: Только заголовок
+                value:
+                  title: Проверить сценарии из задания
+      responses:
+        '201':
+          description: Задача создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: 1
+                title: Сделать модуль авторизации
+                description: регистрация, вход, JWT
+                completed: false
+                created_at: "2026-01-01T12:05:00Z"
+                updated_at: "2026-01-01T12:05:00Z"
+                user_id: 1
+        '400':
+          description: Пустой или отсутствующий `title`, либо битый JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Заголовок задачи обязателен
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/tasks/{id}:
+    put:
+      tags: [tasks]
+      summary: Отредактировать свою задачу
+      description: >
+        Полное обновление `title` и `description` у своей задачи. Свою/чужую определяем по токену:
+        чужая задача — 403, несуществующая или чужая по id — 404 (не раскрываем чужие id,
+        если задача не найдена у этого пользователя — 404).
+      operationId: updateTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: id задачи
+          schema:
+            type: integer
+            format: int32
+          example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+            example:
+              title: Сделать модуль авторизации
+              description: регистрация, вход, JWT — готово
+      responses:
+        '200':
+          description: Задача обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: 1
+                title: Сделать модуль авторизации
+                description: регистрация, вход, JWT — готово
+                completed: false
+                created_at: "2026-01-01T12:05:00Z"
+                updated_at: "2026-01-01T13:00:00Z"
+                user_id: 1
+        '400':
+          description: Пустой или отсутствующий `title`, либо битый JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Заголовок задачи обязателен
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    delete:
+      tags: [tasks]
+      summary: Удалить свою задачу
+      operationId: deleteTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: id задачи
+          schema:
+            type: integer
+            format: int32
+          example: 1
+      responses:
+        '200':
+          description: Задача удалена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: Задача удалена
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/tasks/{id}/complete:
+    patch:
+      tags: [tasks]
+      summary: Переключить статус «выполнено»
+      description: >
+        Меняет `completed` на противоположное (false -> true, true -> false) у своей задачи.
+        Тело запроса не нужно.
+      operationId: toggleTaskComplete
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: id задачи
+          schema:
+            type: integer
+            format: int32
+          example: 1
+      responses:
+        '200':
+          description: Статус переключён, возвращаем задачу
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+              example:
+                id: 1
+                title: Сделать модуль авторизации
+                description: регистрация, вход, JWT
+                completed: true
+                created_at: "2026-01-01T12:05:00Z"
+                updated_at: "2026-01-01T14:00:00Z"
+                user_id: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT (HS256) из ответов register/login. Передавай в заголовке: Authorization: Bearer <token>.
+        Секрет — переменная окружения JWT_SECRET, срок жизни — JWT_EXPIRES_MINUTES
+        (по умолчанию 1440 минут = сутки).
+
+  schemas:
+    RegisterRequest:
+      type: object
+      description: Тело POST /api/auth/register (фронтовый тип RegisterRequest).
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          description: Обязателен; приводится к нижнему регистру и обрезается.
+          example: misha@example.com
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 72
+          description: Обязателен; в БД хранится только BCrypt-хеш, сам пароль не сохраняется.
+          example: secret123
+        name:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: Необязателен; пусто или пробелы -> null в БД, в ответе будет "".
+          example: Миша
+
+    LoginRequest:
+      type: object
+      description: Тело POST /api/auth/login (фронтовый тип LoginRequest).
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          description: Обязателен; нормализуется как при регистрации.
+          example: misha@example.com
+        password:
+          type: string
+          format: password
+          description: Обязателен.
+          example: secret123
+
+    User:
+      type: object
+      description: >
+        Пользователь в ответах авторизации — ровно тип User из frontend/src/types.ts:
+        без пароля, хеша и created_at.
+      required:
+        - id
+        - name
+        - email
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          description: Всегда строка; если имя не задавали — "".
+          example: Миша
+        email:
+          type: string
+          example: misha@example.com
+    AuthResponse:
+      type: object
+      description: Успешный ответ POST /api/auth/register и POST /api/auth/login.
+      required:
+        - token
+        - user
+      properties:
+        token:
+          type: string
+          description: 'JWT (HS256); дальше передаётся как Authorization: Bearer <token>.'
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature
+        user:
+          $ref: '#/components/schemas/User'
+
+    ErrorResponse:
+      type: object
+      description: Единый формат ошибки бэкенда для всех ответов 4xx/5xx.
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Понятный текст на русском.
+          example: Неверный email или пароль
+
+    MessageResponse:
+      type: object
+      description: Короткий успешный ответ (logout, удаление задачи).
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: Выход выполнен
+
+    Task:
+      type: object
+      description: >
+        Задача. Даты — строки ISO-8601 в UTC. `user_id` берётся из токена —
+        в телах запросов не передаётся.
+      required:
+        - id
+        - title
+        - description
+        - completed
+        - created_at
+        - updated_at
+        - user_id
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        title:
+          type: string
+          example: Сделать модуль авторизации
+        description:
+          type: string
+          description: Необязателен при создании/редактировании — в ответе будет "".
+          example: регистрация, вход, JWT
+        completed:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-01T12:05:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-01-01T12:05:00Z"
+        user_id:
+          type: integer
+          format: int32
+          example: 1
+
+    TaskRequest:
+      type: object
+      description: >
+        Тело POST /api/tasks и PUT /api/tasks/{id} — фронтовые типы CreateTaskRequest
+        и UpdateTaskRequest имеют ту же форму.
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          description: Обязателен и не может быть пустым (иначе 400).
+          example: Сделать модуль авторизации
+        description:
+          type: string
+          description: Необязателен.
+          example: регистрация, вход, JWT
+  responses:
+    Unauthorized:
+      description: >
+        Нет заголовка Authorization, токен в неверном формате, просрочен или подписан чужим
+        секретом. Тело — единый формат { message } (см. docs/api.md), у Ktor дополнительно
+        добавляется заголовок WWW-Authenticate.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Нужен действительный токен
+
+    Forbidden:
+      description: Задача существует, но принадлежит другому пользователю (проверка по токену).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Это задача другого пользователя
+
+    NotFound:
+      description: Задачи с таким id нет (чужая задача не «находится» как своя — тоже 404).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Задача не найдена
+
+    ServerError:
+      description: Непредвиденная ошибка сервера — тело всё равно в формате { message }, не пустой экран.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Внутренняя ошибка сервера
+
+
+
+
+
